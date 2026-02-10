@@ -348,3 +348,129 @@ export const deleteTaskTool = tool(
     }),
   },
 );
+
+export const searchTasksTool = tool(
+  async ({ query, status, limit = 10 }) => {
+    try {
+      if (!toolContext.userId) {
+        return {
+          success: false,
+          error: "User not authenticated",
+          message: "You must be logged in to search tasks",
+        };
+      }
+
+      // Build the base filter
+      const filter: any = { userId: toolContext.userId };
+      if (status) filter.status = status;
+
+      // Get all tasks for the user (with optional status filter)
+      let tasks = await Task.find(filter).sort({ createdAt: -1 });
+
+      if (!query || query.trim() === "") {
+        // If no query, return recent tasks
+        const limitedTasks = tasks.slice(0, limit);
+        return {
+          success: true,
+          tasks: limitedTasks.map((task) => ({
+            ...task.toObject(),
+            matchScore: 1,
+            matchReason: "Recent task",
+          })),
+          count: limitedTasks.length,
+          message: `Found ${limitedTasks.length} recent task${limitedTasks.length !== 1 ? "s" : ""}`,
+        };
+      }
+
+      // Score tasks based on relevance
+      const queryLower = query.toLowerCase();
+      const queryWords = queryLower.split(/\s+/).filter(w => w.length > 2);
+
+      const scoredTasks = tasks.map((task) => {
+        const taskObj = task.toObject();
+        let score = 0;
+        const reasons: string[] = [];
+
+        const titleLower = (taskObj.title || "").toLowerCase();
+        const descLower = (taskObj.description || "").toLowerCase();
+
+        // Exact title match
+        if (titleLower.includes(queryLower)) {
+          score += 100;
+          reasons.push("Exact title match");
+        }
+
+        // Exact description match
+        if (descLower.includes(queryLower)) {
+          score += 50;
+          reasons.push("Description match");
+        }
+
+        // Word-level matching
+        for (const word of queryWords) {
+          if (titleLower.includes(word)) {
+            score += 20;
+            if (!reasons.includes("Title word match")) {
+              reasons.push("Title word match");
+            }
+          }
+          if (descLower.includes(word)) {
+            score += 10;
+            if (!reasons.includes("Description word match")) {
+              reasons.push("Description word match");
+            }
+          }
+        }
+
+        // Priority bonus for incomplete tasks
+        if (taskObj.status !== "completed") {
+          score += 5;
+        }
+
+        return {
+          ...taskObj,
+          matchScore: score,
+          matchReason: reasons.join(", ") || "No specific match",
+        };
+      });
+
+      // Filter out zero scores and sort by score
+      const relevantTasks = scoredTasks
+        .filter((t) => t.matchScore > 0)
+        .sort((a, b) => b.matchScore - a.matchScore)
+        .slice(0, limit);
+
+      return {
+        success: true,
+        tasks: relevantTasks,
+        count: relevantTasks.length,
+        message: relevantTasks.length > 0
+          ? `Found ${relevantTasks.length} matching task${relevantTasks.length !== 1 ? "s" : ""}`
+          : `No tasks found matching "${query}"`,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message,
+        message: "Failed to search tasks",
+      };
+    }
+  },
+  {
+    name: "search_tasks",
+    description: "Search for tasks using natural language query. Returns matching tasks with relevance scores.",
+    schema: z.object({
+      query: z
+        .string()
+        .describe("Natural language search query (e.g., 'meeting', 'report', 'buy groceries')"),
+      status: z
+        .enum(["todo", "in-progress", "completed"])
+        .optional()
+        .describe("Optional status filter"),
+      limit: z
+        .number()
+        .default(5)
+        .describe("Maximum number of tasks to return"),
+    }),
+  },
+);

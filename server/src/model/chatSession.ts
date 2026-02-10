@@ -51,6 +51,26 @@ const chatSessionSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.Mixed,
     default: null
   },
+  userIntent: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
+  foundTasks: {
+    type: [mongoose.Schema.Types.Mixed],
+    default: []
+  },
+  selectedTaskId: {
+    type: String,
+    default: null
+  },
+  awaitingConfirmation: {
+    type: Boolean,
+    default: false
+  },
+  operationDetails: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
   checkpoints: [checkpointSchema],
   isActive: {
     type: Boolean,

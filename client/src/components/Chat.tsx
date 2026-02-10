@@ -1,11 +1,42 @@
 import { useState, useRef, useEffect } from 'react';
 import { api } from '../api/client';
-import { Send, Plus, Trash2, Clock, Loader2 } from 'lucide-react';
+import { Send, Plus, Trash2, Clock, Loader2, Check, X } from 'lucide-react';
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+}
+
+interface FoundTask {
+  _id: string;
+  title: string;
+  description?: string;
+  status: string;
+  priority: string;
+  dueDate?: string;
+  matchScore: number;
+  matchReason: string;
+}
+
+interface UserIntent {
+  action: 'create' | 'update' | 'delete' | 'complete' | 'list' | 'chat';
+  confidence: number;
+  reason: string;
+  extractedInfo?: {
+    title?: string;
+    description?: string;
+    priority?: string;
+    dueDate?: string;
+    status?: string;
+    searchQuery?: string;
+  };
+}
+
+interface OperationDetails {
+  action: string;
+  taskId?: string;
+  updates?: any;
 }
 
 interface ChatSession {
@@ -22,6 +53,10 @@ export function Chat() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [isLoadingSessions, setIsLoadingSessions] = useState(true);
   const [pendingTaskInfo, setPendingTaskInfo] = useState<any>(null);
+  const [foundTasks, setFoundTasks] = useState<FoundTask[]>([]);
+  const [userIntent, setUserIntent] = useState<UserIntent | null>(null);
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
+  const [operationDetails, setOperationDetails] = useState<OperationDetails | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -58,6 +93,10 @@ export function Chat() {
       );
       setCurrentSessionId(sessionId);
       setPendingTaskInfo(data.session.pendingTask);
+      setFoundTasks(data.session.foundTasks || []);
+      setUserIntent(data.session.userIntent || null);
+      setAwaitingConfirmation(data.session.awaitingConfirmation || false);
+      setOperationDetails(data.session.operationDetails || null);
     } catch (error) {
       console.error('Failed to load session:', error);
     }
@@ -81,6 +120,10 @@ export function Chat() {
     setMessages([]);
     setCurrentSessionId(undefined);
     setPendingTaskInfo(null);
+    setFoundTasks([]);
+    setUserIntent(null);
+    setAwaitingConfirmation(false);
+    setOperationDetails(null);
   };
 
   const sendMessage = async () => {
@@ -105,6 +148,10 @@ export function Chat() {
 
       setCurrentSessionId(data.sessionId);
       setPendingTaskInfo(data.hasPendingTask ? data.pendingTask : null);
+      setFoundTasks(data.foundTasks || []);
+      setUserIntent(data.userIntent || null);
+      setAwaitingConfirmation(data.awaitingConfirmation || false);
+      setOperationDetails(data.operationDetails || null);
 
       // Refresh sessions list
       loadSessions();
@@ -127,6 +174,41 @@ export function Chat() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
+    }
+  };
+
+  const handleConfirmation = async (confirmed: boolean) => {
+    if (isLoading) return;
+    
+    const message = confirmed ? 'yes' : 'no';
+    
+    setMessages((prev) => [
+      ...prev,
+      { role: 'user', content: confirmed ? 'Yes' : 'No', timestamp: new Date() },
+    ]);
+    
+    setIsLoading(true);
+    
+    try {
+      const data = await api.sendMessage(message, currentSessionId);
+      
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: data.response, timestamp: new Date() },
+      ]);
+      
+      setCurrentSessionId(data.sessionId);
+      setPendingTaskInfo(data.hasPendingTask ? data.pendingTask : null);
+      setFoundTasks(data.foundTasks || []);
+      setUserIntent(data.userIntent || null);
+      setAwaitingConfirmation(data.awaitingConfirmation || false);
+      setOperationDetails(data.operationDetails || null);
+      
+      loadSessions();
+    } catch (error) {
+      console.error('Failed to send confirmation:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -204,13 +286,19 @@ export function Chat() {
               </p>
               <div className="space-y-2 text-sm">
                 <p className="px-4 py-2 bg-gray-100 rounded-lg">
-                  "I need to buy groceries tomorrow at 5 PM"
+                  &ldquo;I need to buy groceries tomorrow at 5 PM&rdquo;
                 </p>
                 <p className="px-4 py-2 bg-gray-100 rounded-lg">
-                  "Remind me to call mom on Friday"
+                  &ldquo;Remind me to call mom on Friday&rdquo;
                 </p>
                 <p className="px-4 py-2 bg-gray-100 rounded-lg">
-                  "Create a high priority task for the report due Monday"
+                  &ldquo;Create a high priority task for the report due Monday&rdquo;
+                </p>
+                <p className="px-4 py-2 bg-blue-50 text-blue-800 rounded-lg">
+                  &ldquo;I finished the report&rdquo; (mark as complete)
+                </p>
+                <p className="px-4 py-2 bg-blue-50 text-blue-800 rounded-lg">
+                  &ldquo;Move my meeting to next week&rdquo; (update task)
                 </p>
               </div>
             </div>
@@ -282,16 +370,112 @@ export function Chat() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Pending Task Banner */}
-        {pendingTaskInfo && pendingTaskInfo.missingFields?.length > 0 && (
-          <div className="px-6 py-3 bg-amber-50 border-t border-amber-200">
-            <div className="flex items-center gap-2 text-amber-800 text-sm">
-              <Clock className="h-4 w-4" />
-              <span>
-                Creating task... Missing:{' '}
-                {pendingTaskInfo.missingFields.join(', ')}
-              </span>
-            </div>
+        {/* Context Banner - Shows pending task, found tasks, or confirmation */}
+        {(pendingTaskInfo?.missingFields?.length > 0 || foundTasks.length > 0 || awaitingConfirmation) && (
+          <div className="px-6 py-3 bg-amber-50 border-t border-amber-200 max-h-48 overflow-y-auto">
+            {/* Pending Task Info */}
+            {pendingTaskInfo?.missingFields?.length > 0 && (
+              <div className="flex items-center gap-2 text-amber-800 text-sm mb-2">
+                <Clock className="h-4 w-4 flex-shrink-0" />
+                <span>
+                  Creating task... Missing:{' '}
+                  {pendingTaskInfo.missingFields.join(', ')}
+                </span>
+              </div>
+            )}
+
+            {/* User Intent Display */}
+            {userIntent && userIntent.action !== 'chat' && (
+              <div className="flex items-center gap-2 text-blue-800 text-sm mb-2">
+                <span className="font-medium capitalize">{userIntent.action}</span>
+                <span className="text-blue-600">({Math.round(userIntent.confidence * 100)}% confidence)</span>
+              </div>
+            )}
+
+            {/* Found Tasks for Selection */}
+            {foundTasks.length > 0 && !awaitingConfirmation && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-gray-700">
+                  Found {foundTasks.length} task{foundTasks.length !== 1 ? 's' : ''}:
+                </p>
+                {foundTasks.slice(0, 5).map((task, idx) => (
+                  <div 
+                    key={task._id} 
+                    className="flex items-start gap-2 text-sm bg-white p-2 rounded border border-amber-200"
+                  >
+                    <span className="font-medium text-gray-900 min-w-[1.5rem]">{idx + 1}.</span>
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">{task.title}</p>
+                      <p className="text-xs text-gray-500">
+                        {task.status} • {task.priority} priority
+                        {task.dueDate && ` • Due ${new Date(task.dueDate).toLocaleDateString()}`}
+                      </p>
+                      {task.matchReason && (
+                        <p className="text-xs text-green-600 mt-1">{task.matchReason}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Confirmation State */}
+            {awaitingConfirmation && foundTasks.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-sm font-medium text-amber-900">
+                  {userIntent?.action === 'complete' && 'Mark this task as complete?'}
+                  {userIntent?.action === 'delete' && 'Delete this task?'}
+                  {userIntent?.action === 'update' && 'Update this task?'}
+                  {!['complete', 'delete', 'update'].includes(userIntent?.action || '') && 'Please confirm the action:'}
+                </p>
+                {foundTasks.slice(0, 1).map((task) => (
+                  <div 
+                    key={task._id} 
+                    className="flex items-start gap-2 text-sm bg-white p-3 rounded border-2 border-amber-300"
+                  >
+                    <div className="flex-1">
+                      <p className="font-medium text-gray-900">{task.title}</p>
+                      <p className="text-xs text-gray-500">
+                        {task.status} • {task.priority} priority
+                        {task.dueDate && ` • Due ${new Date(task.dueDate).toLocaleDateString()}`}
+                      </p>
+                      {operationDetails?.updates && Object.keys(operationDetails.updates).length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-gray-200">
+                          <p className="text-xs text-amber-700 font-medium">Changes:</p>
+                          {operationDetails.updates.title && (
+                            <p className="text-xs text-gray-600">Title: {operationDetails.updates.title}</p>
+                          )}
+                          {operationDetails.updates.dueDate && (
+                            <p className="text-xs text-gray-600">Due: {new Date(operationDetails.updates.dueDate).toLocaleDateString()}</p>
+                          )}
+                          {operationDetails.updates.priority && (
+                            <p className="text-xs text-gray-600">Priority: {operationDetails.updates.priority}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={() => handleConfirmation(true)}
+                    disabled={isLoading}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <Check className="h-4 w-4" />
+                    Yes
+                  </button>
+                  <button
+                    onClick={() => handleConfirmation(false)}
+                    disabled={isLoading}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <X className="h-4 w-4" />
+                    No
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

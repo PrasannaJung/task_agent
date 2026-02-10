@@ -175,6 +175,11 @@ app.post("/api/chat", authMiddleware, async (req: AuthRequest, res: Response) =>
     const result = await agentWorkflow.invoke({
       messages,
       pendingTask: chatSession.pendingTask || undefined,
+      userIntent: chatSession.userIntent || undefined,
+      foundTasks: chatSession.foundTasks || [],
+      selectedTaskId: chatSession.selectedTaskId || undefined,
+      awaitingConfirmation: chatSession.awaitingConfirmation || false,
+      operationDetails: chatSession.operationDetails || undefined,
     });
 
     // Clear tool context
@@ -203,8 +208,13 @@ app.post("/api/chat", authMiddleware, async (req: AuthRequest, res: Response) =>
       timestamp: new Date(),
     });
 
-    // Update pending task
+    // Update all state fields
     chatSession.pendingTask = result.pendingTask || null;
+    chatSession.userIntent = result.userIntent || null;
+    chatSession.foundTasks = result.foundTasks || [];
+    chatSession.selectedTaskId = result.selectedTaskId || null;
+    chatSession.awaitingConfirmation = result.awaitingConfirmation || false;
+    chatSession.operationDetails = result.operationDetails || null;
     chatSession.lastActivity = new Date();
 
     // Save checkpoint
@@ -212,6 +222,11 @@ app.post("/api/chat", authMiddleware, async (req: AuthRequest, res: Response) =>
       nodeId: "end",
       state: {
         pendingTask: result.pendingTask,
+        userIntent: result.userIntent,
+        foundTasks: result.foundTasks,
+        selectedTaskId: result.selectedTaskId,
+        awaitingConfirmation: result.awaitingConfirmation,
+        operationDetails: result.operationDetails,
         messageCount: result.messages.length,
       },
       timestamp: new Date(),
@@ -224,6 +239,10 @@ app.post("/api/chat", authMiddleware, async (req: AuthRequest, res: Response) =>
       sessionId: chatSession._id,
       hasPendingTask: !!result.pendingTask,
       pendingTask: result.pendingTask,
+      userIntent: result.userIntent,
+      foundTasks: result.foundTasks,
+      awaitingConfirmation: result.awaitingConfirmation,
+      operationDetails: result.operationDetails,
     });
   } catch (error: any) {
     clearToolContext();
@@ -264,6 +283,11 @@ app.get("/api/chat/sessions/:sessionId", authMiddleware, async (req: AuthRequest
         title: session.title,
         messages: session.messages,
         pendingTask: session.pendingTask,
+        userIntent: session.userIntent,
+        foundTasks: session.foundTasks,
+        selectedTaskId: session.selectedTaskId,
+        awaitingConfirmation: session.awaitingConfirmation,
+        operationDetails: session.operationDetails,
         isActive: session.isActive,
         createdAt: session.createdAt,
         lastActivity: session.lastActivity,
