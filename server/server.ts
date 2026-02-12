@@ -14,6 +14,8 @@ import {
   AuthRequest,
   generateToken,
 } from "./src/middleware/auth.js";
+import gmailRoutes from "./src/routes/gmail.routes.js";
+import { initializeEmailSyncCron } from "./src/cron/emailSync.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -21,6 +23,9 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Gmail routes
+app.use("/api/gmail", gmailRoutes);
 
 // ==========================================
 // AUTHENTICATION ROUTES
@@ -473,6 +478,9 @@ app.get("/health", (req: Request, res: Response) => {
 async function startServer() {
   await connectDB();
 
+  // Initialize email sync cron job
+  initializeEmailSyncCron();
+
   app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📡 API endpoints:`);
@@ -489,6 +497,16 @@ async function startServer() {
     console.log(`   PUT  /api/tasks/:id - Update task`);
     console.log(`   PATCH /api/tasks/:id/complete - Complete task`);
     console.log(`   DELETE /api/tasks/:id - Delete task`);
+    console.log(`📧 Gmail endpoints:`);
+    console.log(`   GET  /api/gmail/auth-url - Get OAuth URL`);
+    console.log(`   POST /api/gmail/connect - Connect Gmail`);
+    console.log(`   POST /api/gmail/oauth-callback - OAuth callback`);
+    console.log(`   GET  /api/gmail/status - Get connection status`);
+    console.log(`   POST /api/gmail/disconnect - Disconnect Gmail`);
+    console.log(`   POST /api/gmail/sync - Manual sync`);
+    console.log(`   GET  /api/gmail/tasks - Get email-derived tasks`);
+    console.log(`   GET  /api/gmail/tasks/stats - Get task statistics`);
+    console.log(`⏰ Cron Job: Email sync runs every 3 days at 9:00 AM UTC`);
   });
 }
 

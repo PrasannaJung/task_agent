@@ -22,6 +22,29 @@ const userPreferencesSchema = new mongoose.Schema({
   }
 }, { _id: false });
 
+const gmailAuthSchema = new mongoose.Schema({
+  accessToken: {
+    type: String,
+    required: false
+  },
+  refreshToken: {
+    type: String,
+    required: false
+  },
+  expiryDate: {
+    type: Date,
+    required: false
+  },
+  connected: {
+    type: Boolean,
+    default: false
+  },
+  lastSyncAt: {
+    type: Date,
+    required: false
+  }
+}, { _id: false });
+
 const userSchema = new mongoose.Schema({
   email: {
     type: String,
@@ -37,6 +60,10 @@ const userSchema = new mongoose.Schema({
   },
   preferences: {
     type: userPreferencesSchema,
+    default: () => ({})
+  },
+  gmailAuth: {
+    type: gmailAuthSchema,
     default: () => ({})
   }
 }, {

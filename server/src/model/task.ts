@@ -1,5 +1,28 @@
 import mongoose from 'mongoose';
 
+const emailSourceSchema = new mongoose.Schema({
+  emailId: {
+    type: String,
+    required: true
+  },
+  subject: {
+    type: String,
+    required: true
+  },
+  sender: {
+    type: String,
+    required: true
+  },
+  receivedAt: {
+    type: Date,
+    required: true
+  },
+  snippet: {
+    type: String,
+    required: false
+  }
+}, { _id: false });
+
 const taskSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -42,6 +65,15 @@ const taskSchema = new mongoose.Schema({
   chatSessionId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'ChatSession',
+    required: false
+  },
+  source: {
+    type: String,
+    enum: ['chat', 'email', 'manual'],
+    default: 'chat'
+  },
+  emailSource: {
+    type: emailSourceSchema,
     required: false
   }
 }, {
